@@ -7,7 +7,7 @@ from board_analysis import BoardAnalyzer
 from move_analysis import MoveAnalyzer
 from utils import format_item_list, parse_pgn, get_board_pgn
 from piece_utils import piece_dict
-
+from openings import Opening
 class GameAnalyzer:
     """Class for analyzing complete chess games"""
     
@@ -122,9 +122,8 @@ class GameAnalyzer:
         best_move = engine.get_best_move(board)
 
         if check_if_opening:
-            # Import here to avoid circular imports
-            from openings import search_opening
-            opening = search_opening(get_board_pgn(position_after_move))
+            
+            opening = Opening().search_opening(get_board_pgn(position_after_move))
             if opening is not None:
                 review = f'This is a book move. The opening is called {opening}. '
                 return 'book', review, best_move, board.san(best_move)
@@ -390,21 +389,255 @@ class GameAnalyzer:
 
         return review_list, best_review_list, classification_list, uci_best_moves, san_best_moves
     
-    @staticmethod
-    def roast_move(board, move, previous_review="", check_if_opening=False):
-        """Generate a sarcastic/humorous review of a chess move"""
-        # This method can be implemented similarly to review_move but with humor/sarcasm
-        # For brevity, I'll skip implementing the full function here
-        # It would be very similar to review_move but with more colorful language
+    def roast_move(board: chess.Board, move, previous_review: str, check_if_opening=False):
+        def format_item_list(items):
+            if len(items) == 0:
+                return ""
+
+            if len(items) == 1:
+                return items[0]
+
+            formatted_items = ", ".join(items[:-1]) + ", and " + items[-1]
+            return formatted_items
+
+        position_after_move = board.copy()
+        position_after_move.push(move)
         
-        # For now, just call the regular review function
-        classification, review, best_move, san_best_move = GameAnalyzer.review_move(
-            board, move, previous_review, check_if_opening)
+        review = ''
+
+        best_move = MoveAnalyzer.get_best_move(board)
+
+        if check_if_opening:
+            opening = Opening().search_opening(get_board_pgn(position_after_move))
+            if opening is not None:
+                review = f'This is a book move. The opening is called {opening}. '
+                return 'book', review, best_move, board.san(best_move)
+        
+        move_classication = MoveAnalyzer.classify_move(board, move)
+
+        if move_classication in ['excellent', 'good']:
+
+            if move == best_move:
+                move_classication = "best"
+                
+            review += f'{board.san(move)} is {move_classication}. '
             
-        # Add some sarcastic tone to the review
-        review = "Roast mode: " + review
+            trade = False
+
+            if MoveAnalyzer.is_possible_trade(board, move) and not MoveAnalyzer.move_is_discovered_check(board, move):
+                if board.is_capture(move):
+                    review += 'This is a trade. '
+                else:
+                    review += 'This offers a trade. '
+                trade = True
+
+            defended_pieces = MoveAnalyzer.move_defends_hanging_piece(board, move, return_list_defended=True)
+            defended_squares = [chess.square_name(s) for s in defended_pieces]
+            defended_pieces = [piece_dict[str(board.piece_at(s)).lower()] for s in defended_pieces]
+
+            if 'King' in defended_pieces:
+                ki = defended_pieces.index('King')
+                del defended_pieces[ki]
+                del defended_squares[ki]
+
+            if (len(defended_pieces) > 0) and (trade == False):
+                
+                review += f'This defends a {format_item_list(defended_pieces)} on {format_item_list(defended_squares)}. '
+
+            possible_forked_squares = MoveAnalyzer.move_creates_fork(board, move, return_forked_squares=True)
+            if len(possible_forked_squares) >= 2:
+                forked_pieces = [piece_dict[str(board.piece_at(s)).lower()] for s in possible_forked_squares]
+                review += f'This creates a fork on {format_item_list(forked_pieces)}. '
+            else:
+                possible_attakced_piece = MoveAnalyzer.move_attacks_piece(board, move, return_attacked_piece=True)
+                if possible_attakced_piece is not False:
+                    review += f'This attacks the {piece_dict[str(possible_attakced_piece).lower()]}. '
+
+
+            if MoveAnalyzer.move_blocks_check(board, move):
+                review += f'This blocks a check to the king with a piece. '
+
+            developing =  MoveAnalyzer.is_developing_move(board, move)
+            if developing is not False:
+                review += f'This develops a {piece_dict[developing.lower()]}. '
+            
+            if MoveAnalyzer.is_fianchetto(board, move):
+                review += 'This fianchettos the bishop by putting it on a powerful diagonal. '
+
+            if MoveAnalyzer.move_pins_opponent(board, move):
+                review += 'This pins a piece of the opponent to their king. '
+
+            if MoveAnalyzer.moves_rook_to_open_file(board, move):
+                review += "By placing the rook on an open file, it controls important columns. "
+
+            if BoardAnalyzer.is_endgame(board):
+                if MoveAnalyzer.move_moves_king_off_backrank(board, move):
+                    review += "By moving the king off the back rank, the risk of back rank mate threats is reduced and improve the king's safety. "
+
+            if MoveAnalyzer.move_wins_tempo(board, move):
+                review += 'This move gains a tempo. '
+
+            if 'trade' not in previous_review:
+
+                if MoveAnalyzer.move_captures_higher_piece(board, move):
+                    review += f'This captures a higher value piece. '
+
+                if 'higher value piece' not in previous_review:
+                    if MoveAnalyzer.move_captures_free_piece(board, move):
+                        review += f'This captures a free {piece_dict[str(board.piece_at(move.to_square)).lower()]}. '
+
+            attacked_squares_with_check = MoveAnalyzer.move_is_discovered_check_and_attacks(board, move, return_attacked_squares=True)
+            if len(attacked_squares_with_check) > 0:
+                attacked_pieces_with_check = [board.piece_at(s) for s in attacked_squares_with_check]
+                attacked_pieces_with_check = [piece_dict[str(p).lower()] for p in attacked_pieces_with_check]
+                review += f'This creates a discovered check whilst attacking a {format_item_list(attacked_pieces_with_check)}. '
+
+            trapped_squares = MoveAnalyzer.move_traps_opponents_piece(board, move, return_trapped_squares=True)
+            if len(trapped_squares) > 0:
+                trapped_pieces = [board.piece_at(s) for s in trapped_squares]
+                trapped_pieces = [piece_dict[str(p).lower()] for p in trapped_pieces]
+                review += f'This traps a {format_item_list(trapped_pieces)}. '
+
+            if MoveAnalyzer.is_possible_sacrifice(board, move):
+                #if move_classication != 'good':
+                move_classication = 'brilliant'
+                review = review.replace('best', 'brilliant')
+                review = review.replace('good', 'brilliant')
+                review = review.replace('excellent', 'brilliant')
+                review += f'This sacrifices the {piece_dict[str(board.piece_at(move.from_square)).lower()]}. '
+
+            if MoveAnalyzer.move_threatens_mate(board, move):
+                review += 'This creates a checkmate threat. '
+
+
+        elif move_classication in ['inaccuracy', 'mistake', 'blunder']:
+
+            review += f'{board.san(move)} is {move_classication}. '
+
+            possible_hanging_squares = []
+            if ('creates a fork' not in previous_review) or (not board.is_check()) or ('trade' not in previous_review) or ('lower value' not in previous_review):
+                possible_hanging_squares = MoveAnalyzer.move_hangs_piece(board, move, return_hanging_squares=True)
+
+                if  MoveAnalyzer.is_possible_trade(board, move):
+                    if move.to_square in possible_hanging_squares:
+                        del possible_hanging_squares[possible_hanging_squares.index(move.to_square)]
+
+                possible_hanging_squares = [s for s in possible_hanging_squares if position_after_move.piece_at(s).color == board.turn]
+                if len(possible_hanging_squares) > 0:
+                    hanging_squares = [chess.square_name(s) for s in possible_hanging_squares]
+                    hanging_pieces = [piece_dict[str(position_after_move.piece_at(s)).lower()] for s in possible_hanging_squares]
+                    review += f'This IS SO STUPID. {format_item_list(hanging_pieces)} is fucking hanging on {format_item_list(hanging_squares)}. '
+
+            capturable_pieces_by_lower =  BoardAnalyzer.check_for_capturable_pieces_by_lower(position_after_move)
+            capturable_pieces_by_lower = [s for s in capturable_pieces_by_lower if s not in possible_hanging_squares]
+
+            if (len(capturable_pieces_by_lower) > 0) and (not position_after_move.is_check()) and (not MoveAnalyzer.is_possible_trade(board, move)):
+                capturable_pieces_by_lower = [piece_dict[str(position_after_move.piece_at(s)).lower()] for s in capturable_pieces_by_lower]
+                review += f'A lower value is piece just STARING at {format_item_list(capturable_pieces_by_lower)}. How the fuck can you let that happen? '
+
+            possible_forking_moves = MoveAnalyzer.move_allows_fork(board, move, return_forking_moves=True)
+            
+            if MoveAnalyzer.get_best_move(position_after_move) in possible_forking_moves:
+                review += 'Forky forky forky YOU CAN GET FORKED YOU DUMBASS! '
+
+            missed_forks = MoveAnalyzer.move_misses_fork(board, move, return_forking_moves=True)
+            if (best_move in missed_forks) and (move != best_move):
+                review += f'Are you blind? You could have forked with {board.san(best_move)}. Smh. '
+
+            missed_pins = MoveAnalyzer.move_misses_pin(board, move, return_pin_move=True)
+            if (best_move in missed_pins) and (move != best_move):
+                review += f"Just another missed pin with {board.san(best_move)} because of stupidity. "
+
+            missed_free_captures = MoveAnalyzer.move_misses_free_piece(board, move, return_free_captures=True)
+            if len(missed_free_captures) > 0:
+                if (best_move in missed_free_captures) and (move != best_move):
+                    review += f"Can this get any more annoying? You could have taken a {piece_dict[str(board.piece_at(best_move.to_square)).lower()]}. "
+
+            lets_opponent_play_move = MoveAnalyzer.get_best_move(position_after_move)
+
+            if MoveAnalyzer.move_threatens_mate(board, best_move):
+                review += "Is this person trying to lose? They could've threatened a fucking forced checkmate. "
+
+            missed_attacked_piece = MoveAnalyzer.move_attacks_piece(board, best_move, return_attacked_piece=True)
+            if missed_attacked_piece is not False:
+                review += f'This missed attacking {piece_dict[str(missed_attacked_piece).lower()]} with {board.san(best_move)} because they were too pussy. '
+
+            if MoveAnalyzer.move_attacks_piece(position_after_move, lets_opponent_play_move):
+                review += f"You're just asking the opponent to attack one of your pieces. "
+
+            attacked_squares_with_check = MoveAnalyzer.move_is_discovered_check_and_attacks(position_after_move, lets_opponent_play_move, return_attacked_squares=True)
+            if len(attacked_squares_with_check) > 0:
+                attacked_pieces_with_check = [position_after_move.piece_at(s) for s in attacked_squares_with_check]
+                attacked_pieces_with_check = [piece_dict[str(p).lower()] for p in attacked_pieces_with_check]
+                review += f'This dumbass looses a {format_item_list(attacked_pieces_with_check)} from a discovered check. '
+
+            missed_attacked_squares_with_check = MoveAnalyzer.move_is_discovered_check_and_attacks(board, best_move, return_attacked_squares=True)
+            if len(missed_attacked_squares_with_check) > 0:
+                missed_attacked_pieces_with_check = [board.piece_at(s) for s in missed_attacked_squares_with_check]
+                missed_attacked_pieces_with_check = [piece_dict[str(p).lower()] for p in missed_attacked_pieces_with_check]
+                review += f'Understandable that a moron would lose a chance to attack a {format_item_list(missed_attacked_pieces_with_check)} from a discovered check. '
+
+            if not (len(attacked_squares_with_check) > 0):
+                trapped_squares = MoveAnalyzer.move_traps_opponents_piece(position_after_move, lets_opponent_play_move, return_trapped_squares=True)
+                if len(trapped_squares) > 0:
+                    trapped_pieces = [position_after_move.piece_at(s) for s in trapped_squares]
+                    trapped_pieces = [piece_dict[str(p).lower()] for p in trapped_pieces]
+                    review += f"That's so hilarious! A {format_item_list(trapped_pieces)} can get trapped. "
+
+            missed_trapped_squares = MoveAnalyzer.move_traps_opponents_piece(board, best_move, return_trapped_squares=True)
+            if len(missed_trapped_squares) > 0:
+                missed_trapped_pieces = [board.piece_at(s) for s in missed_trapped_squares]
+                missed_trapped_pieces = [piece_dict[str(p).lower()] for p in missed_trapped_pieces]
+                review += f"Why did you let a {format_item_list(missed_trapped_pieces)} escape?? You could've trapped them you dumb fuck. "
+
+            if MoveAnalyzer.move_wins_tempo(position_after_move, lets_opponent_play_move):
+                review += f'Sigh. You just let the opponent win a tempo. '
+
+            review += f"The opponent can play {position_after_move.san(lets_opponent_play_move)}. "
+
+        elif 'continues gets mated' in move_classication:
+            losing_side = 'White' if board.turn else 'Black'
+            review += f"{board.san(move)} is good, but {losing_side} will still get checkmated. {losing_side} gets mated in {move_classication[-1]}."
+            if move == best_move:
+                move_classication = "best"
+            else:
+                move_classication = 'good'
+
+        elif 'gets mated' in move_classication:
+            lets_opponent_play_move = MoveAnalyzer.get_best_move(position_after_move)
+
+            losing_side = 'White' if board.turn else 'Black'
+            review += f'The opponent can play {position_after_move.san(lets_opponent_play_move)}. '
+            review += f"{board.san(move)} is a blunder. You tryna sacrifice the game? {losing_side} gets mated in {move_classication[-1]}."
+
+            move_classication = 'blunder'
         
-        return classification, review, best_move, san_best_move
+        elif 'lost mate' in move_classication:
+            lets_opponent_play_move = MoveAnalyzer.get_best_move(position_after_move)
+            review += f"You were winning! Why did you do that? I guess that's expected for a someone with a small brain to lose a checkmate sequence. The opponent can play {position_after_move.san(lets_opponent_play_move)}. "
+            move_classication = 'blunder'
+
+        elif 'mates' in move_classication:
+            n = previous_review[-2] # ex. "White gets mated in 6." we need the number 6
+            if n.isdigit(): # means that player is continuing checkmate sequence
+
+                if int(move_classication[-1]) <= int(n): # means player is one move less away from mating
+                    winning_side = 'White' if board.turn else 'Black'
+                    if int(move_classication[-1]) == 0:
+                        review += f"Checkmate!"
+                    else:
+                        review += f"{board.san(move)} continues the checkmate sequence. {winning_side} gets mated in {move_classication[-1]}."
+                
+                else:
+                    winning_side = 'White' if board.turn else 'Black'
+                    review += f"{board.san(move)} is good, but there was a faster way to checkmate. {winning_side} gets mated in {move_classication[-1]}."
+                    move_classication = 'good'
+
+                if move == best_move:
+                    move_classication = "best"
+
+    
+        return move_classication, review, best_move, board.san(best_move)
     
     @staticmethod
     def seperate_squares_in_move_list(uci_moves):

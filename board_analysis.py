@@ -275,33 +275,33 @@ class BoardAnalyzer:
         black_dev = 0
 
         for square in [chess.A1, chess.H1]:
-            if board.piece_at(square) is None or str(board.piece_at(square)) != 'R':
+            if str(board.piece_at(square)) != 'R':
                 white_dev += 1
 
         for square in [chess.B1, chess.G1]:
-            if board.piece_at(square) is None or str(board.piece_at(square)) != 'N':
+            if str(board.piece_at(square)) != 'N':
                 white_dev += 1
 
         for square in [chess.C1, chess.F1]:
-            if board.piece_at(square) is None or str(board.piece_at(square)) != 'B':
+            if str(board.piece_at(square)) != 'B':
                 white_dev += 1
 
         if board.piece_at(chess.D1) is None or str(board.piece_at(chess.D1)) != 'Q':
             white_dev += 1
 
         for square in [chess.A8, chess.H8]:
-            if board.piece_at(square) is None or str(board.piece_at(square)) != 'r':
+            if str(board.piece_at(square)) != 'r':
                 black_dev += 1
 
         for square in [chess.B8, chess.G8]:
-            if board.piece_at(square) is None or str(board.piece_at(square)) != 'n':
+            if str(board.piece_at(square)) != 'n':
                 black_dev += 1
 
         for square in [chess.C8, chess.F8]:
-            if board.piece_at(square) is None or str(board.piece_at(square)) != 'b':
+            if str(board.piece_at(square)) != 'b':
                 black_dev += 1
 
-        if board.piece_at(chess.D8) is None or str(board.piece_at(chess.D8)) != 'q':
+        if str(board.piece_at(chess.D8)) != 'q':
             black_dev += 1
 
         return white_dev, black_dev
@@ -350,6 +350,3 @@ class BoardAnalyzer:
                     black_control += len(board.attacks(square))
 
         return white_control, black_control
-
-# Create a global board analyzer instance
-board_analyzer = BoardAnalyzer()

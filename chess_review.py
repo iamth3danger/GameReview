@@ -3,7 +3,7 @@ from functools import lru_cache
 
 # Import all components
 from engine import engine
-from game_analysis import game_analyzer
+from game_analyzer import game_analyzer
 
 @lru_cache(maxsize=128)
 def pgn_game_review(pgn_data, roast=False, limit_type="time", time_limit=0.25, depth_limit=15):

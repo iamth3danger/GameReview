@@ -113,11 +113,6 @@ class MoveAnalyzer:
         position_after_move.push(move)
 
         result = engine.has_mate_in_n(position_after_move)
-        
-        if not result:
-            if return_winning_player:
-                return None
-            return False
             
         # Get score info
         with chess.engine.SimpleEngine.popen_uci(engine.stockfish_path) as stockfish:
@@ -125,12 +120,18 @@ class MoveAnalyzer:
         score = str(info['score'].relative)
         
         if return_winning_player:
-            if '+' in score:
-                return not board.turn
-            elif '-' in score:
-                return board.turn
+            if '#' not in score:
+                return None
+            else:
+                if '+' in score:
+                    return not board.turn
+                elif '-' in score:
+                    return board.turn
                 
-        return True
+        if '#' not in score:
+            return False
+        else:
+            return True
     
     @staticmethod
     def calculate_points_gained_by_move(board, move, **kwargs):
@@ -575,6 +576,7 @@ class MoveAnalyzer:
                 return True
             
         return False
+    
 
-# Create a global move analyzer instance
-move_analyzer = MoveAnalyzer()
+
+
